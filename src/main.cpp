@@ -80,6 +80,7 @@ LEDMode currentLEDMode = LED_OFF;
 
 void loadConfig();
 void saveConfig();
+void startAPServer();
 void setupAPMode();
 void setupSTAMode();
 void handleConfigPage();
@@ -303,6 +304,19 @@ void saveConfig() {
 
 // ============== OPERATING MODES ==============
 
+void startAPServer() {
+  setAllLEDs(255, 255, 0);
+
+  server.on("/", handleConfigPage);
+  server.on("/save", handleSaveConfig);
+  server.on("/status", handleSTATUSJson);
+  server.on("/log", handleLogPage);
+  server.on("/logdata", handleLogData);
+  server.begin();
+
+  addLog("✓ Web server started at http://192.168.4.1");
+}
+
 void setupAPMode() {
   currentMode = MODE_AP_CONFIG;
   
@@ -312,17 +326,8 @@ void setupAPMode() {
 
   WiFi.mode(WIFI_AP);
   WiFi.softAP("OnAIR-Config", "12345678");
-  
-  setAllLEDs(255, 255, 0);
-  
-  server.on("/", handleConfigPage);
-  server.on("/save", handleSaveConfig);
-  server.on("/status", handleSTATUSJson);
-  server.on("/log", handleLogPage);
-  server.on("/logdata", handleLogData);
-  server.begin();
-  
-  addLog("✓ Web server started at http://192.168.4.1");
+
+  startAPServer();
 }
 
 void setupSTAMode() {
@@ -398,17 +403,8 @@ void setupSTAMode() {
   delay(200);
   WiFi.mode(WIFI_AP);
   WiFi.softAP("ESP8266-Config", "12345678");
-  
-  setAllLEDs(255, 255, 0);
-  
-  server.on("/", handleConfigPage);
-  server.on("/save", handleSaveConfig);
-  server.on("/status", handleSTATUSJson);
-  server.on("/log", handleLogPage);
-  server.on("/logdata", handleLogData);
-  server.begin();
-  
-  addLog("✓ Web server started at http://192.168.4.1");
+
+  startAPServer();
   addLog("✓ SSID: OnAIR-Config | Password: 12345678");
 }
 
