@@ -10,6 +10,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.3.0] — 2026-03-02
+
+### Refactored
+- Introduced `AP_SSID` and `AP_PASS` named constants at the top of the file,
+  replacing all hardcoded string literals
+
+### Fixed
+- **AP config mode used two different SSIDs** — `setupAPMode()` broadcast
+  `"OnAIR-Config"` while the WiFi fallback block inside `setupSTAMode()`
+  broadcast `"ESP8266-Config"`, causing the device to appear under an
+  unexpected network name when WiFi connection failed
+- Both code paths now use `AP_SSID` / `AP_PASS`, so the AP name is
+  consistent and can be changed in one place
+
+---
+
 ## [1.2.0] — 2026-03-02
 
 ### Refactored

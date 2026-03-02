@@ -21,6 +21,9 @@
 
 #define OTA_PASSWORD "onair_ota"   // used by web OTA (/update) — browser must enter this
 
+#define AP_SSID "OnAIR-Config"
+#define AP_PASS "12345678"
+
 #define LOG_ENTRIES 32
 #define LOG_MAX_LEN 64
 
@@ -321,11 +324,11 @@ void setupAPMode() {
   currentMode = MODE_AP_CONFIG;
   
   addLog("=== ACCESS POINT MODE ===");
-  Serial.print("SSID: OnAIR-Config | IP: 192.168.4.1");
+  Serial.print("SSID: " AP_SSID " | IP: 192.168.4.1");
   Serial.println("\n");
 
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("OnAIR-Config", "12345678");
+  WiFi.softAP(AP_SSID, AP_PASS);
 
   startAPServer();
 }
@@ -402,10 +405,10 @@ void setupSTAMode() {
   WiFi.disconnect();
   delay(200);
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("ESP8266-Config", "12345678");
+  WiFi.softAP(AP_SSID, AP_PASS);
 
   startAPServer();
-  addLog("✓ SSID: OnAIR-Config | Password: 12345678");
+  addLog("✓ SSID: " + String(AP_SSID) + " | Password: " + String(AP_PASS));
 }
 
 // ============== WEB HANDLERS ==============
