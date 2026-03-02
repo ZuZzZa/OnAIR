@@ -96,11 +96,8 @@ void setAllLEDs(uint8_t r, uint8_t g, uint8_t b);
 void setLEDColor(uint16_t index, uint8_t r, uint8_t g, uint8_t b);
 void clearAllLEDs();
 void forceClearBuffer();
-void blinkRed();
-void solidRed();
-void blinkGreen();
-void solidGreen();
-void blinkBlue();
+void ledBlink(LEDMode mode, uint8_t r, uint8_t g, uint8_t b);
+void ledSolid(LEDMode mode, uint8_t r, uint8_t g, uint8_t b);
 void showRainbow();
 void updateLEDDisplay();
 void handleOTAPage();
@@ -1036,75 +1033,41 @@ void clearAllLEDs() {
   }
 }
 
-void blinkRed() {
-  currentLEDMode = LED_RED_BLINK;
-  
+void ledBlink(LEDMode mode, uint8_t r, uint8_t g, uint8_t b) {
+  currentLEDMode = mode;
+
   const unsigned long blinkInterval = 250;
   static unsigned long lastToggle = 0;
   static bool isOn = false;
   static bool initialized = false;
-  
-  // Reset on mode change
+
   if (lastLEDMode != currentLEDMode) {
     initialized = false;
     lastLEDMode = currentLEDMode;
   }
-  
-  // Initialize once on first call
+
   if (!initialized) {
     forceClearBuffer();
     initialized = true;
     lastToggle = millis();
     isOn = false;
   }
-  
+
   if (millis() - lastToggle >= blinkInterval) {
     lastToggle = millis();
     isOn = !isOn;
-    
-    noInterrupts();
-    if (isOn) {
-      for (uint16_t i = 0; i < strip.numPixels(); i++) {
-        strip.setPixelColor(i, strip.Color(255, 0, 0));
-      }
-    } else {
-      for (uint16_t i = 0; i < strip.numPixels(); i++) {
-        strip.setPixelColor(i, 0);
-      }
-    }
-    strip.show();
-    interrupts();
-  }
-}
 
-void solidRed() {
-  currentLEDMode = LED_RED_SOLID;
-  
-  const unsigned long refreshInterval = 1000;
-  static unsigned long lastRefresh = 0;
-  static bool initialized = false;
-  
-  if (lastLEDMode != currentLEDMode) {
-    initialized = false;
-    lastLEDMode = currentLEDMode;
-  }
-  
-  if (!initialized || (millis() - lastRefresh >= refreshInterval)) {
-    if (!initialized) forceClearBuffer();
-    initialized = true;
-    lastRefresh = millis();
-    
     noInterrupts();
     for (uint16_t i = 0; i < strip.numPixels(); i++) {
-      strip.setPixelColor(i, strip.Color(255, 0, 0));
+      strip.setPixelColor(i, isOn ? strip.Color(r, g, b) : 0);
     }
     strip.show();
     interrupts();
   }
 }
 
-void solidGreen() {
-  currentLEDMode = LED_GREEN_SOLID;
+void ledSolid(LEDMode mode, uint8_t r, uint8_t g, uint8_t b) {
+  currentLEDMode = mode;
 
   const unsigned long refreshInterval = 1000;
   static unsigned long lastRefresh = 0;
@@ -1122,89 +1085,7 @@ void solidGreen() {
 
     noInterrupts();
     for (uint16_t i = 0; i < strip.numPixels(); i++) {
-      strip.setPixelColor(i, strip.Color(0, 255, 0));
-    }
-    strip.show();
-    interrupts();
-  }
-}
-
-void blinkGreen() {
-  currentLEDMode = LED_GREEN_BLINK;
-  
-  const unsigned long blinkInterval = 250;
-  static unsigned long lastToggle = 0;
-  static bool isOn = false;
-  static bool initialized = false;
-  
-  // Reset on mode change
-  if (lastLEDMode != currentLEDMode) {
-    initialized = false;
-    lastLEDMode = currentLEDMode;
-  }
-  
-  // Initialize once on first call
-  if (!initialized) {
-    forceClearBuffer();
-    initialized = true;
-    lastToggle = millis();
-    isOn = false;
-  }
-  
-  if (millis() - lastToggle >= blinkInterval) {
-    lastToggle = millis();
-    isOn = !isOn;
-    
-    noInterrupts();
-    if (isOn) {
-      for (uint16_t i = 0; i < strip.numPixels(); i++) {
-        strip.setPixelColor(i, strip.Color(0, 255, 0));
-      }
-    } else {
-      for (uint16_t i = 0; i < strip.numPixels(); i++) {
-        strip.setPixelColor(i, 0);
-      }
-    }
-    strip.show();
-    interrupts();
-  }
-}
-
-void blinkBlue() {
-  currentLEDMode = LED_BLUE_BLINK;
-  
-  const unsigned long blinkInterval = 250;
-  static unsigned long lastToggle = 0;
-  static bool isOn = false;
-  static bool initialized = false;
-  
-  // Reset on mode change
-  if (lastLEDMode != currentLEDMode) {
-    initialized = false;
-    lastLEDMode = currentLEDMode;
-  }
-  
-  // Initialize once on first call
-  if (!initialized) {
-    forceClearBuffer();
-    initialized = true;
-    lastToggle = millis();
-    isOn = false;
-  }
-  
-  if (millis() - lastToggle >= blinkInterval) {
-    lastToggle = millis();
-    isOn = !isOn;
-    
-    noInterrupts();
-    if (isOn) {
-      for (uint16_t i = 0; i < strip.numPixels(); i++) {
-        strip.setPixelColor(i, strip.Color(0, 0, 255));
-      }
-    } else {
-      for (uint16_t i = 0; i < strip.numPixels(); i++) {
-        strip.setPixelColor(i, 0);
-      }
+      strip.setPixelColor(i, strip.Color(r, g, b));
     }
     strip.show();
     interrupts();
@@ -1274,7 +1155,7 @@ void updateLEDDisplay() {
   }
   
   if (isApiTransientError) {
-    blinkBlue();
+    ledBlink(LED_BLUE_BLINK, 0, 0, 255);
     return;
   }
   
@@ -1282,9 +1163,9 @@ void updateLEDDisplay() {
     clearAllLEDs();
   } else if (callState == "active") {
     if (muteState == "inactive") {
-      blinkRed();     // on call, mic live  → fast red blink
+      ledBlink(LED_RED_BLINK, 255, 0, 0);   // on call, mic live  → fast red blink
     } else {
-      solidRed();     // on call, muted     → steady red
+      ledSolid(LED_RED_SOLID, 255, 0, 0);   // on call, muted     → steady red
     }
   }
 }
