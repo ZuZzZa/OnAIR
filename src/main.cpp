@@ -21,7 +21,7 @@
 
 #define OTA_PASSWORD "onair_ota"   // used by web OTA (/update) — browser must enter this
 
-#define LOG_ENTRIES 8
+#define LOG_ENTRIES 32
 #define LOG_MAX_LEN 64
 
 const unsigned long apiRequestInterval = 3000;
@@ -971,13 +971,23 @@ void parseTeamsResponse(String jsonResponse) {
   }
   
   if (doc.containsKey("call")) {
-    callState = doc["call"].as<String>();
-    addLog("Call: " + callState);
+    String newCall = doc["call"].as<String>();
+    if (newCall != callState) {
+      callState = newCall;
+      addLog("Call: " + callState);
+    } else {
+      callState = newCall;
+    }
   }
   
   if (doc.containsKey("mute")) {
-    muteState = doc["mute"].as<String>();
-    addLog("Mute: " + muteState);
+    String newMute = doc["mute"].as<String>();
+    if (newMute != muteState) {
+      muteState = newMute;
+      addLog("Mute: " + muteState);
+    } else {
+      muteState = newMute;
+    }
   }
   
   Serial.println("LED state updated in memory");
