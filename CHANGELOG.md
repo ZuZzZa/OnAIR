@@ -4,9 +4,39 @@ All notable changes to this project will be documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-**Versioning scheme:** `1.STEP.FIX`
-- `STEP` — increments with each refactoring step
-- `FIX`  — increments with each bug fix within a step (resets to 0 on new step)
+**Versioning scheme:** `MAJOR.STEP.FIX`
+- `MAJOR` — increments on major architectural changes
+- `STEP`  — increments with each refactoring step
+- `FIX`   — increments with each bug fix within a step (resets to 0 on new step)
+
+---
+
+## [2.0.0] — 2026-03-04
+
+### Refactored
+- **Split monolithic `main.cpp` (1234 lines) into logical modules** — step 9
+  of the refactoring plan; `main.cpp` now contains only `setup()` + `loop()`
+  (117 lines)
+
+**New source files:**
+
+| File | Responsibility |
+|---|---|
+| `src/globals.h` | All `#define` settings, enums, struct types, `extern` declarations, `addLog()` declaration |
+| `src/globals.cpp` | Shared variable definitions + `addLog()` implementation |
+| `src/config.h/.cpp` | `loadConfig()`, `saveConfig()`, `applyJsonToConfig()` |
+| `src/led.h/.cpp` | LED primitives, `updateLEDDisplay()`, `isScheduleActive()` |
+| `src/wifi_manager.h/.cpp` | AP/STA setup, `connectToWiFi()`, `initializeNTP()`, `printCurrentTime()` |
+| `src/api.h/.cpp` | `fetchAndUpdateLEDs()`, `parseTeamsResponse()`, error helpers |
+| `src/web_handlers.h/.cpp` | All HTTP route handlers (config, save, status, OTA, log) |
+| `src/main.cpp` | `setup()` + `loop()` only |
+
+### Changed
+- `apiRequestInterval` / `apiRequestTimeout` / `maxRetries` constants renamed to
+  `API_REQUEST_INTERVAL_MS` / `API_REQUEST_TIMEOUT_MS` / `API_MAX_RETRIES`
+  (`#define` instead of `const` to avoid ODR issues across translation units)
+- Version bumped to **2.0.0** — major bump reflects the architectural change
+  from single-file to multi-module project layout
 
 ---
 
@@ -155,33 +185,3 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - Initial repository setup (README, .gitignore)
-
----
-
-## [2.0.0] — 2026-03-04
-
-### Refactored
-- **Split monolithic `main.cpp` (1234 lines) into logical modules** — step 9
-  of the refactoring plan; `main.cpp` now contains only `setup()` + `loop()`
-  (117 lines)
-
-**New source files:**
-
-| File | Responsibility |
-|---|---|
-| `src/globals.h` | All `#define` settings, enums, struct types, `extern` declarations, `addLog()` declaration |
-| `src/globals.cpp` | Shared variable definitions + `addLog()` implementation |
-| `src/config.h/.cpp` | `loadConfig()`, `saveConfig()`, `applyJsonToConfig()` |
-| `src/led.h/.cpp` | LED primitives, `updateLEDDisplay()`, `isScheduleActive()` |
-| `src/wifi_manager.h/.cpp` | AP/STA setup, `connectToWiFi()`, `initializeNTP()`, `printCurrentTime()` |
-| `src/api.h/.cpp` | `fetchAndUpdateLEDs()`, `parseTeamsResponse()`, error helpers |
-| `src/web_handlers.h/.cpp` | All HTTP route handlers (config, save, status, OTA, log) |
-| `src/main.cpp` | `setup()` + `loop()` only |
-
-### Changed
-- `apiRequestInterval` / `apiRequestTimeout` / `maxRetries` constants renamed to
-  `API_REQUEST_INTERVAL_MS` / `API_REQUEST_TIMEOUT_MS` / `API_MAX_RETRIES`
-  (`#define` instead of `const` to avoid ODR issues across translation units)
-- Version bumped to **2.0.0** — major bump reflects the architectural change
-  from single-file to multi-module project layout
-
