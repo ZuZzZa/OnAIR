@@ -81,6 +81,7 @@ LEDMode currentLEDMode = LED_OFF;
 
 // ============== FUNCTION DECLARATIONS ==============
 
+void applyJsonToConfig(JsonDocument& doc, const char* defaultApiUrl = "");
 void loadConfig();
 void saveConfig();
 void startAPServer();
@@ -94,6 +95,8 @@ void setupWiFi();
 void initializeNTP();
 void printCurrentTime();
 void connectToWiFi();
+void enterErrorPause();
+void incrementApiErrorCount();
 void fetchAndUpdateLEDs();
 void parseTeamsResponse(String jsonResponse);
 void setAllLEDs(uint8_t r, uint8_t g, uint8_t b);
@@ -239,6 +242,25 @@ void loop() {
 
 // ============== CONFIG FUNCTIONS ==============
 
+void applyJsonToConfig(JsonDocument& doc, const char* defaultApiUrl) {
+  strlcpy(config.ssid,    doc["ssid"]    | "",             sizeof(config.ssid));
+  strlcpy(config.password,doc["password"] | "",            sizeof(config.password));
+  strlcpy(config.apiUrl,  doc["apiUrl"]  | defaultApiUrl,  sizeof(config.apiUrl));
+
+  if (doc.containsKey("schedule")) {
+    schedule.enabled   = doc["schedule"]["enabled"]   | true;
+    schedule.startHour = doc["schedule"]["startHour"] | 0;
+    schedule.endHour   = doc["schedule"]["endHour"]   | 23;
+
+    if (doc["schedule"].containsKey("days")) {
+      JsonArray daysArray = doc["schedule"]["days"];
+      for (int i = 0; i < 7 && i < (int)daysArray.size(); i++) {
+        schedule.days[i] = daysArray[i] | true;
+      }
+    }
+  }
+}
+
 void loadConfig() {
   memset(&config, 0, sizeof(config));
   memset(&schedule, 0, sizeof(schedule));
@@ -255,21 +277,7 @@ void loadConfig() {
     if (file) {
       StaticJsonDocument<768> doc;
       if (deserializeJson(doc, file) == DeserializationError::Ok) {
-        strlcpy(config.ssid, doc["ssid"] | "", sizeof(config.ssid));
-        strlcpy(config.password, doc["password"] | "", sizeof(config.password));
-        strlcpy(config.apiUrl, doc["apiUrl"] | "http://localhost:3491/v1/status", sizeof(config.apiUrl));
-        
-        if (doc.containsKey("schedule")) {
-          schedule.enabled = doc["schedule"]["enabled"] | true;
-          schedule.startHour = doc["schedule"]["startHour"] | 0;
-          schedule.endHour = doc["schedule"]["endHour"] | 23;
-          
-          JsonArray daysArray = doc["schedule"]["days"];
-          for (int i = 0; i < 7 && i < daysArray.size(); i++) {
-            schedule.days[i] = daysArray[i] | true;
-          }
-        }
-        
+        applyJsonToConfig(doc, "http://localhost:3491/v1/status");
         addLog("✓ Config loaded: SSID=" + String(config.ssid));
       }
       file.close();
@@ -415,156 +423,157 @@ void setupSTAMode() {
 
 void handleConfigPage() {
   String html = "<!DOCTYPE html>";
-  html += "<html><head><meta charset=\"UTF-8\">";
-  html += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
-  html += "<title>OnAIR Device WiFi Config</title>";
-  html += "<style>";
-  html += "body { font-family: Arial; margin: 40px; background: #f0f0f0; }";
-  html += ".container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }";
-  html += "h1 { color: #333; text-align: center; }";
-  html += "h2 { color: #555; font-size: 16px; margin-top: 25px; padding-bottom: 10px; border-bottom: 2px solid #ddd; }";
-  html += ".form-group { margin-bottom: 15px; }";
-  html += "label { display: block; margin-bottom: 5px; color: #555; font-weight: bold; }";
-  html += "input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }";
-  html += "input[type=\"checkbox\"] { width: auto; margin-right: 10px; }";
-  html += ".checkbox-group { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px; }";
-  html += ".checkbox-item { display: flex; align-items: center; }";
-  html += ".time-inputs { display: flex; gap: 10px; align-items: center; }";
-  html += ".time-inputs input { max-width: 80px; }";
-  html += "button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }";
-  html += "button:hover { background: #0056b3; }";
-  html += ".status { margin-top: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #007bff; border-radius: 4px; }";
-  html += ".status-label { font-weight: bold; color: #333; }";
-  html += ".error-box { margin-top: 20px; padding: 15px; background: #fee; border-left: 4px solid #dc3545; border-radius: 4px; }";
-  html += ".error-title { font-weight: bold; color: #dc3545; margin-bottom: 5px; }";
-  html += ".error-text { color: #721c24; font-size: 14px; }";
-  html += "</style></head><body>";
-  html += "<div class=\"container\">";
-  html += "<h1>OnAIR Device Configuration</h1>";
+  html.reserve(3200);
+  html += F("<html><head><meta charset=\"UTF-8\">");
+  html += F("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+  html += F("<title>OnAIR Device WiFi Config</title>");
+  html += F("<style>");
+  html += F("body { font-family: Arial; margin: 40px; background: #f0f0f0; }");
+  html += F(".container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }");
+  html += F("h1 { color: #333; text-align: center; }");
+  html += F("h2 { color: #555; font-size: 16px; margin-top: 25px; padding-bottom: 10px; border-bottom: 2px solid #ddd; }");
+  html += F(".form-group { margin-bottom: 15px; }");
+  html += F("label { display: block; margin-bottom: 5px; color: #555; font-weight: bold; }");
+  html += F("input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }");
+  html += F("input[type=\"checkbox\"] { width: auto; margin-right: 10px; }");
+  html += F(".checkbox-group { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px; }");
+  html += F(".checkbox-item { display: flex; align-items: center; }");
+  html += F(".time-inputs { display: flex; gap: 10px; align-items: center; }");
+  html += F(".time-inputs input { max-width: 80px; }");
+  html += F("button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }");
+  html += F("button:hover { background: #0056b3; }");
+  html += F(".status { margin-top: 20px; padding: 10px; background: #f9f9f9; border-left: 4px solid #007bff; border-radius: 4px; }");
+  html += F(".status-label { font-weight: bold; color: #333; }");
+  html += F(".error-box { margin-top: 20px; padding: 15px; background: #fee; border-left: 4px solid #dc3545; border-radius: 4px; }");
+  html += F(".error-title { font-weight: bold; color: #dc3545; margin-bottom: 5px; }");
+  html += F(".error-text { color: #721c24; font-size: 14px; }");
+  html += F("</style></head><body>");
+  html += F("<div class=\"container\">");
+  html += F("<h1>OnAIR Device Configuration</h1>");
   html += "<p style=\"text-align:center;color:#999;font-size:13px;margin-top:-10px;\">Firmware v" FIRMWARE_VERSION "</p>";
   
   if (wifiConnectAttempts > 0) {
-    html += "<div class=\"error-box\">";
+    html += F("<div class=\"error-box\">");
     html += "<div class=\"error-title\">Failed WiFi Attempts: " + String(wifiConnectAttempts) + "/3</div>";
     
     if (lastError != "") {
       html += "<div class=\"error-text\">WiFi Error: " + lastError + "</div>";
     } else {
-      html += "<div class=\"error-text\">WiFi connection failed. Check SSID and password.</div>";
+      html += F("<div class=\"error-text\">WiFi connection failed. Check SSID and password.</div>");
     }
-    html += "</div>";
+    html += F("</div>");
   }
   
   if (apiErrorCount > 0) {
-    html += "<div class=\"error-box\">";
+    html += F("<div class=\"error-box\">");
     html += "<div class=\"error-title\">Failed API Attempts: " + String(apiErrorCount) + "/5</div>";
     
     if (lastApiError != "") {
       html += "<div class=\"error-text\">API Error: " + lastApiError + "</div>";
     } else {
-      html += "<div class=\"error-text\">API connection failed. Check the URL.</div>";
+      html += F("<div class=\"error-text\">API connection failed. Check the URL.</div>");
     }
-    html += "</div>";
+    html += F("</div>");
   }
   
-  html += "<form onsubmit=\"saveConfig(event)\">";
+  html += F("<form onsubmit=\"saveConfig(event)\">");
   
-  html += "<h2>WiFi Settings</h2>";
-  html += "<div class=\"form-group\">";
-  html += "<label for=\"ssid\">WiFi SSID:</label>";
+  html += F("<h2>WiFi Settings</h2>");
+  html += F("<div class=\"form-group\">");
+  html += F("<label for=\"ssid\">WiFi SSID:</label>");
   html += "<input type=\"text\" id=\"ssid\" name=\"ssid\" required placeholder=\"Network name\" value=\"" + String(config.ssid) + "\">";
-  html += "</div>";
-  html += "<div class=\"form-group\">";
-  html += "<label for=\"password\">WiFi Password:</label>";
+  html += F("</div>");
+  html += F("<div class=\"form-group\">");
+  html += F("<label for=\"password\">WiFi Password:</label>");
   html += "<input type=\"password\" id=\"password\" name=\"password\" required placeholder=\"Password\" value=\"" + String(config.password) + "\">";
-  html += "</div>";
-  html += "<div class=\"form-group\">";
-  html += "<label for=\"apiUrl\">API URL:</label>";
+  html += F("</div>");
+  html += F("<div class=\"form-group\">");
+  html += F("<label for=\"apiUrl\">API URL:</label>");
   html += "<input type=\"text\" id=\"apiUrl\" name=\"apiUrl\" placeholder=\"http://localhost:3491/v1/status\" value=\"" + String(config.apiUrl) + "\">";
-  html += "</div>";
+  html += F("</div>");
   
-  html += "<h2>LED Schedule</h2>";
-  html += "<div class=\"form-group\">";
-  html += "<label>";
+  html += F("<h2>LED Schedule</h2>");
+  html += F("<div class=\"form-group\">");
+  html += F("<label>");
   html += "<input type=\"checkbox\" id=\"scheduleEnabled\" name=\"scheduleEnabled\"" + String(schedule.enabled ? " checked" : "") + "> Enable Schedule";
-  html += "</label>";
-  html += "</div>";
+  html += F("</label>");
+  html += F("</div>");
   
-  html += "<div class=\"form-group\">";
-  html += "<label>Working Hours:</label>";
-  html += "<div class=\"time-inputs\">";
+  html += F("<div class=\"form-group\">");
+  html += F("<label>Working Hours:</label>");
+  html += F("<div class=\"time-inputs\">");
   html += "<input type=\"number\" id=\"startHour\" min=\"0\" max=\"23\" value=\"" + String(schedule.startHour) + "\" placeholder=\"Start hour\">";
-  html += "<span>to</span>";
+  html += F("<span>to</span>");
   html += "<input type=\"number\" id=\"endHour\" min=\"0\" max=\"23\" value=\"" + String(schedule.endHour) + "\" placeholder=\"End hour\">";
-  html += "</div>";
-  html += "</div>";
+  html += F("</div>");
+  html += F("</div>");
   
-  html += "<div class=\"form-group\">";
-  html += "<label>Active Days:</label>";
-  html += "<div class=\"checkbox-group\">";
+  html += F("<div class=\"form-group\">");
+  html += F("<label>Active Days:</label>");
+  html += F("<div class=\"checkbox-group\">");
   const char* days[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
   for (int i = 0; i < 7; i++) {
-    html += "<div class=\"checkbox-item\">";
+    html += F("<div class=\"checkbox-item\">");
     html += "<input type=\"checkbox\" id=\"day" + String(i) + "\" name=\"day" + String(i) + "\"" + String(schedule.days[i] ? " checked" : "") + ">";
     html += "<label for=\"day" + String(i) + "\" style=\"margin: 0;\">" + String(days[i]) + "</label>";
-    html += "</div>";
+    html += F("</div>");
   }
-  html += "</div>";
-  html += "</div>";
+  html += F("</div>");
+  html += F("</div>");
   
-  html += "<button type=\"submit\">Save & Reconnect</button>";
-  html += "</form>";
-  html += "<div id=\"status\" class=\"status\" style=\"display:none;\"></div>";
-  html += "<button onclick=\"location.href='/log'\" style=\"background:#0d6efd;margin-top:10px;\">&#128196; Event Log</button>";
+  html += F("<button type=\"submit\">Save & Reconnect</button>");
+  html += F("</form>");
+  html += F("<div id=\"status\" class=\"status\" style=\"display:none;\"></div>");
+  html += F("<button onclick=\"location.href='/log'\" style=\"background:#0d6efd;margin-top:10px;\">&#128196; Event Log</button>");
   if (currentMode == MODE_STA_NORMAL) {
-    html += "<button onclick=\"location.href='/update'\" style=\"background:#28a745;margin-top:10px;\">&#8593; Firmware Update (OTA)</button>";
+    html += F("<button onclick=\"location.href='/update'\" style=\"background:#28a745;margin-top:10px;\">&#8593; Firmware Update (OTA)</button>");
   }
-  html += "</div>";
-  html += "<script>";
-  html += "function saveConfig(event) {";
-  html += "  event.preventDefault();";
-  html += "  const ssid = document.getElementById(\"ssid\").value;";
-  html += "  const password = document.getElementById(\"password\").value;";
-  html += "  const apiUrl = document.getElementById(\"apiUrl\").value;";
-  html += "  const scheduleEnabled = document.getElementById(\"scheduleEnabled\").checked;";
-  html += "  const startHour = parseInt(document.getElementById(\"startHour\").value) || 0;";
-  html += "  const endHour = parseInt(document.getElementById(\"endHour\").value) || 23;";
-  html += "  const days = [];";
-  html += "  for (let i = 0; i < 7; i++) {";
-  html += "    days.push(document.getElementById(\"day\" + i).checked);";
-  html += "  }";
-  html += "  const payload = {";
-  html += "    ssid: ssid,";
-  html += "    password: password,";
-  html += "    apiUrl: apiUrl,";
-  html += "    schedule: {";
-  html += "      enabled: scheduleEnabled,";
-  html += "      startHour: startHour,";
-  html += "      endHour: endHour,";
-  html += "      days: days";
-  html += "    }";
-  html += "  };";
-  html += "  fetch(\"/save\", {";
-  html += "    method: \"POST\",";
-  html += "    headers: {\"Content-Type\": \"application/json\"},";
-  html += "    body: JSON.stringify(payload)";
-  html += "  })";
-  html += "  .then(r => r.text())";
-  html += "  .then(msg => {";
-  html += "    const statusDiv = document.getElementById(\"status\");";
-  html += "    statusDiv.style.display = \"block\";";
-  html += "    statusDiv.innerHTML = \"<span class=\\\"status-label\\\">Saved! Restarting...</span>\";";
-  html += "    statusDiv.style.borderLeftColor = \"#28a745\";";
-  html += "  })";
-  html += "  .catch(err => {";
-  html += "    const statusDiv = document.getElementById(\"status\");";
-  html += "    statusDiv.style.display = \"block\";";
-  html += "    statusDiv.innerHTML = \"<span class=\\\"status-label\\\">Error!</span>\";";
-  html += "    statusDiv.style.borderLeftColor = \"#dc3545\";";
-  html += "  });";
-  html += "}";
-  html += "</script>";
-  html += "</body></html>";
+  html += F("</div>");
+  html += F("<script>");
+  html += F("function saveConfig(event) {");
+  html += F("  event.preventDefault();");
+  html += F("  const ssid = document.getElementById(\"ssid\").value;");
+  html += F("  const password = document.getElementById(\"password\").value;");
+  html += F("  const apiUrl = document.getElementById(\"apiUrl\").value;");
+  html += F("  const scheduleEnabled = document.getElementById(\"scheduleEnabled\").checked;");
+  html += F("  const startHour = parseInt(document.getElementById(\"startHour\").value) || 0;");
+  html += F("  const endHour = parseInt(document.getElementById(\"endHour\").value) || 23;");
+  html += F("  const days = [];");
+  html += F("  for (let i = 0; i < 7; i++) {");
+  html += F("    days.push(document.getElementById(\"day\" + i).checked);");
+  html += F("  }");
+  html += F("  const payload = {");
+  html += F("    ssid: ssid,");
+  html += F("    password: password,");
+  html += F("    apiUrl: apiUrl,");
+  html += F("    schedule: {");
+  html += F("      enabled: scheduleEnabled,");
+  html += F("      startHour: startHour,");
+  html += F("      endHour: endHour,");
+  html += F("      days: days");
+  html += F("    }");
+  html += F("  };");
+  html += F("  fetch(\"/save\", {");
+  html += F("    method: \"POST\",");
+  html += F("    headers: {\"Content-Type\": \"application/json\"},");
+  html += F("    body: JSON.stringify(payload)");
+  html += F("  })");
+  html += F("  .then(r => r.text())");
+  html += F("  .then(msg => {");
+  html += F("    const statusDiv = document.getElementById(\"status\");");
+  html += F("    statusDiv.style.display = \"block\";");
+  html += F("    statusDiv.innerHTML = \"<span class=\\\"status-label\\\">Saved! Restarting...</span>\";");
+  html += F("    statusDiv.style.borderLeftColor = \"#28a745\";");
+  html += F("  })");
+  html += F("  .catch(err => {");
+  html += F("    const statusDiv = document.getElementById(\"status\");");
+  html += F("    statusDiv.style.display = \"block\";");
+  html += F("    statusDiv.innerHTML = \"<span class=\\\"status-label\\\">Error!</span>\";");
+  html += F("    statusDiv.style.borderLeftColor = \"#dc3545\";");
+  html += F("  });");
+  html += F("}");
+  html += F("</script>");
+  html += F("</body></html>");
   
   server.send(200, "text/html; charset=utf-8", html);
 }
@@ -573,22 +582,7 @@ void handleSaveConfig() {
   if (server.hasArg("plain")) {
     StaticJsonDocument<768> doc;
     if (deserializeJson(doc, server.arg("plain")) == DeserializationError::Ok) {
-      strlcpy(config.ssid, doc["ssid"] | "", sizeof(config.ssid));
-      strlcpy(config.password, doc["password"] | "", sizeof(config.password));
-      strlcpy(config.apiUrl, doc["apiUrl"] | "", sizeof(config.apiUrl));
-      
-      if (doc.containsKey("schedule")) {
-        schedule.enabled = doc["schedule"]["enabled"] | true;
-        schedule.startHour = doc["schedule"]["startHour"] | 0;
-        schedule.endHour = doc["schedule"]["endHour"] | 23;
-        
-        if (doc["schedule"].containsKey("days")) {
-          JsonArray daysArray = doc["schedule"]["days"];
-          for (int i = 0; i < 7 && i < daysArray.size(); i++) {
-            schedule.days[i] = daysArray[i] | true;
-          }
-        }
-      }
+      applyJsonToConfig(doc);
       
       saveConfig();
       
@@ -632,63 +626,64 @@ void handleSTATUSJson() {
 
 void handleOTAPage() {
   String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">";
-  html += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
-  html += "<title>OTA Update</title>";
-  html += "<style>";
-  html += "body { font-family: Arial; margin: 40px; background: #f0f0f0; }";
-  html += ".container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }";
-  html += "h1 { color: #333; text-align: center; }";
-  html += "input[type=file] { display: block; width: 100%; margin: 15px 0; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }";
-  html += "button { width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 5px; }";
-  html += "button:hover { background: #1e7e34; }";
-  html += ".back { background: #6c757d; margin-top: 10px; }";
-  html += ".back:hover { background: #545b62; }";
-  html += ".info { margin: 15px 0; padding: 12px; background: #e8f4fd; border-left: 4px solid #007bff; border-radius: 4px; font-size: 13px; line-height: 1.5; }";
-  html += "#progressBox { display: none; margin-top: 15px; }";
-  html += "progress { width: 100%; height: 22px; border-radius: 4px; }";
-  html += "#statusText { margin-top: 8px; font-weight: bold; color: #333; }";
-  html += "</style></head><body>";
-  html += "<div class=\"container\">";
-  html += "<h1>Firmware Update</h1>";
-  html += "<div class=\"info\">";
-  html += "Upload a compiled <b>.bin</b> file to update the firmware.<br>";
-  html += "During the update: LEDs show <b>white</b> progress bar.<br>";
-  html += "On success: LEDs flash <b>green</b>, device reboots automatically.";
-  html += "</div>";
-  html += "<form id=\"uploadForm\">";
-  html += "<input type=\"file\" id=\"fwFile\" accept=\".bin\" required>";
-  html += "<button type=\"submit\">Upload Firmware</button>";
-  html += "</form>";
-  html += "<button class=\"back\" onclick=\"location.href='/'\">&#8592; Back to Settings</button>";
-  html += "<div id=\"progressBox\">";
-  html += "<progress id=\"bar\" value=\"0\" max=\"100\"></progress>";
-  html += "<div id=\"statusText\">Uploading...</div>";
-  html += "</div>";
-  html += "<script>";
-  html += "document.getElementById('uploadForm').onsubmit=function(e){";
-  html += "  e.preventDefault();";
-  html += "  var f=document.getElementById('fwFile').files[0];";
-  html += "  if(!f)return;";
-  html += "  var fd=new FormData();fd.append('firmware',f);";
-  html += "  var xhr=new XMLHttpRequest();";
-  html += "  xhr.open('POST','/update',true);";
-  html += "  document.getElementById('progressBox').style.display='block';";
-  html += "  xhr.upload.onprogress=function(e){";
-  html += "    if(e.lengthComputable){var p=Math.round(e.loaded*100/e.total);";
-  html += "    document.getElementById('bar').value=p;";
-  html += "    document.getElementById('statusText').textContent='Uploading: '+p+'%';}";
-  html += "  };";
-  html += "  xhr.onload=function(){";
-  html += "    if(xhr.status===200){";
-  html += "      document.getElementById('bar').value=100;";
-  html += "      document.getElementById('statusText').textContent='Done! Device is rebooting...';";
-  html += "    }else{document.getElementById('statusText').textContent='Error: '+xhr.responseText;}";
-  html += "  };";
-  html += "  xhr.onerror=function(){document.getElementById('statusText').textContent='Upload failed!';};";
-  html += "  xhr.send(fd);";
-  html += "};";
-  html += "</script>";
-  html += "</div></body></html>";
+  html.reserve(1800);
+  html += F("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+  html += F("<title>OTA Update</title>");
+  html += F("<style>");
+  html += F("body { font-family: Arial; margin: 40px; background: #f0f0f0; }");
+  html += F(".container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }");
+  html += F("h1 { color: #333; text-align: center; }");
+  html += F("input[type=file] { display: block; width: 100%; margin: 15px 0; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }");
+  html += F("button { width: 100%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 5px; }");
+  html += F("button:hover { background: #1e7e34; }");
+  html += F(".back { background: #6c757d; margin-top: 10px; }");
+  html += F(".back:hover { background: #545b62; }");
+  html += F(".info { margin: 15px 0; padding: 12px; background: #e8f4fd; border-left: 4px solid #007bff; border-radius: 4px; font-size: 13px; line-height: 1.5; }");
+  html += F("#progressBox { display: none; margin-top: 15px; }");
+  html += F("progress { width: 100%; height: 22px; border-radius: 4px; }");
+  html += F("#statusText { margin-top: 8px; font-weight: bold; color: #333; }");
+  html += F("</style></head><body>");
+  html += F("<div class=\"container\">");
+  html += F("<h1>Firmware Update</h1>");
+  html += F("<div class=\"info\">");
+  html += F("Upload a compiled <b>.bin</b> file to update the firmware.<br>");
+  html += F("During the update: LEDs show <b>white</b> progress bar.<br>");
+  html += F("On success: LEDs flash <b>green</b>, device reboots automatically.");
+  html += F("</div>");
+  html += F("<form id=\"uploadForm\">");
+  html += F("<input type=\"file\" id=\"fwFile\" accept=\".bin\" required>");
+  html += F("<button type=\"submit\">Upload Firmware</button>");
+  html += F("</form>");
+  html += F("<button class=\"back\" onclick=\"location.href='/'\">&#8592; Back to Settings</button>");
+  html += F("<div id=\"progressBox\">");
+  html += F("<progress id=\"bar\" value=\"0\" max=\"100\"></progress>");
+  html += F("<div id=\"statusText\">Uploading...</div>");
+  html += F("</div>");
+  html += F("<script>");
+  html += F("document.getElementById('uploadForm').onsubmit=function(e){");
+  html += F("  e.preventDefault();");
+  html += F("  var f=document.getElementById('fwFile').files[0];");
+  html += F("  if(!f)return;");
+  html += F("  var fd=new FormData();fd.append('firmware',f);");
+  html += F("  var xhr=new XMLHttpRequest();");
+  html += F("  xhr.open('POST','/update',true);");
+  html += F("  document.getElementById('progressBox').style.display='block';");
+  html += F("  xhr.upload.onprogress=function(e){");
+  html += F("    if(e.lengthComputable){var p=Math.round(e.loaded*100/e.total);");
+  html += F("    document.getElementById('bar').value=p;");
+  html += F("    document.getElementById('statusText').textContent='Uploading: '+p+'%';}");
+  html += F("  };");
+  html += F("  xhr.onload=function(){");
+  html += F("    if(xhr.status===200){");
+  html += F("      document.getElementById('bar').value=100;");
+  html += F("      document.getElementById('statusText').textContent='Done! Device is rebooting...';");
+  html += F("    }else{document.getElementById('statusText').textContent='Error: '+xhr.responseText;}");
+  html += F("  };");
+  html += F("  xhr.onerror=function(){document.getElementById('statusText').textContent='Upload failed!';};");
+  html += F("  xhr.send(fd);");
+  html += F("};");
+  html += F("</script>");
+  html += F("</div></body></html>");
   server.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -768,46 +763,47 @@ void handleOTAUploadComplete() {
 
 void handleLogPage() {
   String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">";
-  html += "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">";
-  html += "<title>Event Log</title>";
-  html += "<style>";
-  html += "* { box-sizing: border-box; margin: 0; padding: 0; }";
-  html += "body { font-family: monospace; background: #0d1117; color: #c9d1d9; }";
-  html += ".header { background: #161b22; padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #30363d; }";
-  html += "h1 { font-size: 17px; color: #58a6ff; font-family: Arial; flex: 1; }";
-  html += ".btn { padding: 6px 14px; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 13px; background: #21262d; color: #c9d1d9; text-decoration: none; }";
-  html += ".btn:hover { background: #30363d; }";
-  html += ".dot { width: 9px; height: 9px; border-radius: 50%; background: #3fb950; }";
-  html += ".dot.err { background: #ff7b72; }";
-  html += ".log { padding: 10px 20px; }";
-  html += ".entry { padding: 4px 0; border-bottom: 1px solid #161b22; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }";
-  html += ".ts { color: #484f58; margin-right: 8px; font-size: 11px; }";
-  html += ".ok { color: #3fb950; }";
-  html += ".er { color: #ff7b72; }";
-  html += ".info { color: #e6edf3; }";
-  html += ".empty { color: #484f58; padding: 40px; text-align: center; }";
-  html += "</style></head><body>";
-  html += "<div class=\"header\">";
-  html += "<h1>&#128196; Event Log</h1>";
-  html += "<a class=\"btn\" href=\"/\">&#8592; Settings</a>";
-  html += "<div class=\"dot\" id=\"dot\"></div>";
-  html += "</div>";
-  html += "<div class=\"log\" id=\"log\"><div class=\"empty\">Loading...</div></div>";
-  html += "<script>";
-  html += "function fmt(ms){var s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);return (h?h+'h ':'')+( m%60?(m%60)+'m ':'')+s%60+'s';}";
-  html += "function cls(m){return m.indexOf('\\u2713')>=0?'ok':(m.indexOf('\\u2717')>=0?'er':'info');}";
-  html += "function fetch_log(){fetch('/logdata').then(r=>r.json()).then(function(d){";
-  html += "  document.getElementById('dot').className='dot';";
-  html += "  var el=document.getElementById('log');";
-  html += "  if(!d.entries||d.entries.length===0){el.innerHTML='<div class=\"empty\">No entries yet.</div>';return;}";
-  html += "  var h=d.entries.slice().reverse().map(function(e){";
-  html += "    var c=cls(e.msg);";
-  html += "    return '<div class=\"entry\"><span class=\"ts\">['+fmt(e.ts)+']</span><span class=\"'+c+'\">'+e.msg+'</span></div>';";
-  html += "  }).join('');";
-  html += "  el.innerHTML=h;";
-  html += "}).catch(function(){document.getElementById('dot').className='dot err';});}";
-  html += "fetch_log();setInterval(fetch_log,3000);";
-  html += "</script></body></html>";
+  html.reserve(1200);
+  html += F("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
+  html += F("<title>Event Log</title>");
+  html += F("<style>");
+  html += F("* { box-sizing: border-box; margin: 0; padding: 0; }");
+  html += F("body { font-family: monospace; background: #0d1117; color: #c9d1d9; }");
+  html += F(".header { background: #161b22; padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #30363d; }");
+  html += F("h1 { font-size: 17px; color: #58a6ff; font-family: Arial; flex: 1; }");
+  html += F(".btn { padding: 6px 14px; border: 1px solid #30363d; border-radius: 4px; cursor: pointer; font-size: 13px; background: #21262d; color: #c9d1d9; text-decoration: none; }");
+  html += F(".btn:hover { background: #30363d; }");
+  html += F(".dot { width: 9px; height: 9px; border-radius: 50%; background: #3fb950; }");
+  html += F(".dot.err { background: #ff7b72; }");
+  html += F(".log { padding: 10px 20px; }");
+  html += F(".entry { padding: 4px 0; border-bottom: 1px solid #161b22; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }");
+  html += F(".ts { color: #484f58; margin-right: 8px; font-size: 11px; }");
+  html += F(".ok { color: #3fb950; }");
+  html += F(".er { color: #ff7b72; }");
+  html += F(".info { color: #e6edf3; }");
+  html += F(".empty { color: #484f58; padding: 40px; text-align: center; }");
+  html += F("</style></head><body>");
+  html += F("<div class=\"header\">");
+  html += F("<h1>&#128196; Event Log</h1>");
+  html += F("<a class=\"btn\" href=\"/\">&#8592; Settings</a>");
+  html += F("<div class=\"dot\" id=\"dot\"></div>");
+  html += F("</div>");
+  html += F("<div class=\"log\" id=\"log\"><div class=\"empty\">Loading...</div></div>");
+  html += F("<script>");
+  html += F("function fmt(ms){var s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60);return (h?h+'h ':'')+( m%60?(m%60)+'m ':'')+s%60+'s';}");
+  html += F("function cls(m){return m.indexOf('\\u2713')>=0?'ok':(m.indexOf('\\u2717')>=0?'er':'info');}");
+  html += F("function fetch_log(){fetch('/logdata').then(r=>r.json()).then(function(d){");
+  html += F("  document.getElementById('dot').className='dot';");
+  html += F("  var el=document.getElementById('log');");
+  html += F("  if(!d.entries||d.entries.length===0){el.innerHTML='<div class=\"empty\">No entries yet.</div>';return;}");
+  html += F("  var h=d.entries.slice().reverse().map(function(e){");
+  html += F("    var c=cls(e.msg);");
+  html += F("    return '<div class=\"entry\"><span class=\"ts\">['+fmt(e.ts)+']</span><span class=\"'+c+'\">'+e.msg+'</span></div>';");
+  html += F("  }).join('');");
+  html += F("  el.innerHTML=h;");
+  html += F("}).catch(function(){document.getElementById('dot').className='dot err';});}");
+  html += F("fetch_log();setInterval(fetch_log,3000);");
+  html += F("</script></body></html>");
   server.send(200, "text/html; charset=utf-8", html);
 }
 
@@ -856,6 +852,26 @@ void connectToWiFi() {
 
 // ============== API FUNCTIONS ==============
 
+void enterErrorPause() {
+  if (!isInErrorState) {
+    isInErrorState = true;
+    lastErrorTime = millis();
+    isApiTransientError = false;
+    addLog("Pausing 5 minutes before retry...");
+  }
+}
+
+void incrementApiErrorCount() {
+  apiErrorCount++;
+  addLog("API errors: " + String(apiErrorCount) + "/5");
+  if (apiErrorCount >= 5) {
+    addLog("✗ 5 failed API connection attempts!");
+    enterErrorPause();
+  } else {
+    isApiTransientError = true;
+  }
+}
+
 void fetchAndUpdateLEDs() {
   HTTPClient http;
   
@@ -891,65 +907,28 @@ void fetchAndUpdateLEDs() {
   } else if (httpResponseCode == 404) {
     addLog("✗ Error 404: invalid URL!");
     lastApiError = "404 Not Found - check API URL";
-    
-      if (!apiEverSucceeded) {
-      apiErrorCount++;
-      addLog("API errors: " + String(apiErrorCount) + "/5");
-      
-      if (apiErrorCount >= 5) {
-        addLog("✗ 5 failed API connection attempts!");
-        if (!isInErrorState) {
-          isInErrorState = true;
-          lastErrorTime = millis();
-          isApiTransientError = false;
-          addLog("Pausing 5 minutes before retry...");
-        }
-      } else {
-        isApiTransientError = true;
-      }
+    if (apiEverSucceeded) {
+      enterErrorPause();
     } else {
-      if (!isInErrorState) {
-        isInErrorState = true;
-        lastErrorTime = millis();
-        isApiTransientError = false;
-        addLog("Pausing 5 minutes before retry...");
-      }
+      incrementApiErrorCount();
     }
     
   } else {
     addLog("✗ HTTP error: " + String(httpResponseCode));
-    Serial.print("✗ HTTP error: ");
-    Serial.println(httpResponseCode);
-    lastApiError = String("HTTP ") + String(httpResponseCode);
-    
+    Serial.println("✗ HTTP error: " + String(httpResponseCode));
+    lastApiError = "HTTP " + String(httpResponseCode);
     if (apiEverSucceeded) {
       retryCount++;
       addLog("Retries: " + String(retryCount) + "/" + String(maxRetries));
-      
       if (retryCount >= maxRetries) {
         addLog("Max retries reached, pausing 5 minutes...");
-        isInErrorState = true;
-        lastErrorTime = millis();
         retryCount = 0;
-        isApiTransientError = false;
+        enterErrorPause();
       } else {
         isApiTransientError = true;
       }
     } else {
-      apiErrorCount++;
-      addLog("API errors: " + String(apiErrorCount) + "/5");
-      
-      if (apiErrorCount >= 5) {
-        addLog("✗ 5 failed API connection attempts!");
-        if (!isInErrorState) {
-          isInErrorState = true;
-          lastErrorTime = millis();
-          isApiTransientError = false;
-          addLog("Pausing 5 minutes before retry...");
-        }
-      } else {
-        isApiTransientError = true;
-      }
+      incrementApiErrorCount();
     }
   }
   

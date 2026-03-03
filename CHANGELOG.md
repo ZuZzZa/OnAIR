@@ -10,6 +10,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.0] — 2026-03-02
+
+### Refactored
+- Extracted `enterErrorPause()` helper — sets `isInErrorState`, records timestamp,
+  clears transient flag, and logs the 5-minute pause message; was duplicated 3×
+- Extracted `incrementApiErrorCount()` helper — increments counter, logs progress,
+  and calls `enterErrorPause()` at the threshold of 5; was duplicated 2×
+- `fetchAndUpdateLEDs()` 404-branch and generic-HTTP-error branch now each reduce
+  to 3–5 lines using the two helpers instead of 15–20 lines of inline logic
+
+---
+
+## [1.5.0] — 2026-03-02
+
+### Refactored
+- Extracted `applyJsonToConfig(doc, defaultApiUrl)` — unified the duplicated JSON
+  field extraction (ssid, password, apiUrl, schedule, days) that existed in both
+  `loadConfig()` and `handleSaveConfig()`
+- `loadConfig()` calls `applyJsonToConfig(doc, "http://localhost:3491/v1/status")`
+- `handleSaveConfig()` calls `applyJsonToConfig(doc)` (no default URL override)
+- Also fixes the sign-compare compiler warnings in the days-array loop
+
+---
+
+## [1.4.0] — 2026-03-02
+
+### Refactored
+- Applied `F()` macro to all 209 static string literals in `handleConfigPage()`,
+  `handleOTAPage()`, and `handleLogPage()` — moves string data from DRAM to flash
+- Added `html.reserve()` to each handler (3200 / 1800 / 1200 bytes) to pre-allocate
+  the String buffer and eliminate repeated heap reallocations during page builds
+- **RAM usage reduced from 54.2% → 43.9%** (saved 8,408 bytes of DRAM at startup)
+
+---
+
 ## [1.3.0] — 2026-03-02
 
 ### Refactored
