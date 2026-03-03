@@ -108,3 +108,11 @@ const int           maxRetries         = 3;
 - `FIX` — increments with each bug fix within a step, resets to 0 on new step
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
+
+Every version commit is tagged with a plain annotated tag matching the version string:
+
+```bash
+git tag 1.7.0 <commit> -m "Brief description"
+git push origin --tags
+```
+
