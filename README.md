@@ -81,26 +81,6 @@ The device hosts its own web interface for configuration — no app or cloud acc
 
 ---
 
-## Configuration
-
-Key constants in `src/main.cpp`:
-
-```cpp
-#define LED_PIN          D4           // NeoPixel data pin
-#define NUM_LEDS         10           // Number of LEDs in the strip
-#define BRIGHTNESS       150          // 0–255
-#define AP_SSID          "OnAIR-Config"
-#define AP_PASS          "12345678"
-#define OTA_PASSWORD     "onair_ota"
-#define LOG_ENTRIES      32           // Circular event log size
-
-const unsigned long apiRequestInterval = 3000;   // ms between API polls
-const unsigned long apiRequestTimeout  = 300000; // ms pause after max retries
-const int           maxRetries         = 3;
-```
-
----
-
 ## Versioning
 
 `MAJOR.STEP.FIX`
@@ -109,10 +89,44 @@ const int           maxRetries         = 3;
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
-Every version commit is tagged with a plain annotated tag matching the version string:
 
-```bash
-git tag 1.7.0 <commit> -m "Brief description"
-git push origin --tags
+---
+
+## Project Structure
+
+After the v2.0.0 refactoring, the firmware source is split into focused modules. Each module owns a single area of responsibility and exposes a clean `.h` interface.
+
+```
+src/
+├── globals.h          # All #defines, enums, struct types, extern declarations, addLog()
+├── globals.cpp        # Shared variable definitions + addLog() implementation
+│
+├── config.h           # Config module interface
+├── config.cpp         # loadConfig(), saveConfig(), applyJsonToConfig()
+│
+├── led.h              # LED module interface
+├── led.cpp            # LED primitives, updateLEDDisplay(), isScheduleActive()
+│
+├── wifi_manager.h     # WiFi module interface
+├── wifi_manager.cpp   # setupAPMode(), setupSTAMode(), connectToWiFi(), NTP
+│
+├── api.h              # API module interface
+├── api.cpp            # fetchAndUpdateLEDs(), parseTeamsResponse(), error helpers
+│
+├── web_handlers.h     # Web handlers interface
+├── web_handlers.cpp   # HTTP route handlers: config, save, status, OTA, log
+│
+├── main.cpp           # setup() + loop() only (~117 lines)
+└── version.h          # Auto-generated version constants (FIRMWARE_VERSION)
 ```
 
+### Module responsibilities
+
+| Module | Key symbols |
+|---|---|
+| `globals` | `Config`, `Schedule`, `LogEntry`, `CallState`, `MuteState`, `LEDMode`, all shared globals, `addLog()` |
+| `config` | `loadConfig()`, `saveConfig()`, `applyJsonToConfig()` — LittleFS JSON persistence |
+| `led` | `ledBlink()`, `ledSolid()`, `showRainbow()`, `updateLEDDisplay()`, `isScheduleActive()` |
+| `wifi_manager` | `setupAPMode()`, `setupSTAMode()`, `connectToWiFi()`, `initializeNTP()` |
+| `api` | `fetchAndUpdateLEDs()`, `parseTeamsResponse()`, `enterErrorPause()`, `incrementApiErrorCount()` |
+| `web_handlers` | `handleConfigPage()`, `handleSaveConfig()`, `handleSTATUSJson()`, `handleOTAPage()`, `handleLogPage()`, `handleLogData()` |
