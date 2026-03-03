@@ -31,6 +31,21 @@ const unsigned long apiRequestInterval = 3000;
 const unsigned long apiRequestTimeout = 300000;
 const int maxRetries = 3;
 
+#define NTP_SERVER1       "0.ua.pool.ntp.org"
+#define NTP_SERVER2       "1.ua.pool.ntp.org"
+#define NTP_SERVER3       "2.ua.pool.ntp.org"
+#define NTP_TIMEZONE      "EET-2EEST,M3.5.0/3,M10.5.0/4"
+#define NTP_UTC_OFFSET    (2 * 3600)
+#define NTP_DST_OFFSET    (1 * 3600)
+#define NTP_SYNC_ATTEMPTS 3       // retries before giving up
+#define NTP_ATTEMPT_MS    5000    // ms to wait per attempt
+
+// ============== STATE ENUMS ==============
+
+enum CallState { CALL_INACTIVE, CALL_ACTIVE };
+enum MuteState { MIC_LIVE, MIC_MUTED };
+enum LEDMode   { LED_OFF, LED_RED_BLINK, LED_RED_SOLID, LED_GREEN_BLINK, LED_GREEN_SOLID, LED_BLUE_BLINK, LED_RAINBOW };
+
 // ============== GLOBAL VARIABLES ==============
 
 struct Schedule {
@@ -55,8 +70,8 @@ bool isInErrorState = false;
 WiFiClient wifiClient;
 int currentMode = MODE_UNKNOWN;
 
-String callState = "inactive";
-String muteState = "inactive";
+CallState callState = CALL_INACTIVE;
+MuteState muteState = MIC_LIVE;
 
 String lastError = "";
 int wifiConnectAttempts = 0;
@@ -75,7 +90,6 @@ int logHead = 0;
 int logCount = 0;
 
 // LED mode tracking for resetting statics on mode change
-enum LEDMode { LED_OFF, LED_RED_BLINK, LED_RED_SOLID, LED_GREEN_BLINK, LED_GREEN_SOLID, LED_BLUE_BLINK, LED_RAINBOW };
 LEDMode lastLEDMode = LED_OFF;
 LEDMode currentLEDMode = LED_OFF;
 
@@ -613,8 +627,8 @@ void handleSTATUSJson() {
   if (currentMode == MODE_STA_NORMAL) {
     doc["wifiStatus"] = (WiFi.status() == WL_CONNECTED) ? "connected" : "disconnected";
     doc["ip"] = WiFi.localIP().toString();
-    doc["callState"] = callState;
-    doc["muteState"] = muteState;
+    doc["callState"] = (callState == CALL_ACTIVE) ? "active" : "inactive";
+    doc["muteState"] = (muteState == MIC_MUTED)   ? "active" : "inactive";
   }
   
   String json;
@@ -946,22 +960,20 @@ void parseTeamsResponse(String jsonResponse) {
   }
   
   if (doc.containsKey("call")) {
-    String newCall = doc["call"].as<String>();
+    String val = doc["call"].as<String>();
+    CallState newCall = (val == "active") ? CALL_ACTIVE : CALL_INACTIVE;
     if (newCall != callState) {
       callState = newCall;
-      addLog("Call: " + callState);
-    } else {
-      callState = newCall;
+      addLog("Call: " + val);
     }
   }
-  
+
   if (doc.containsKey("mute")) {
-    String newMute = doc["mute"].as<String>();
+    String val = doc["mute"].as<String>();
+    MuteState newMute = (val != "inactive") ? MIC_MUTED : MIC_LIVE;
     if (newMute != muteState) {
       muteState = newMute;
-      addLog("Mute: " + muteState);
-    } else {
-      muteState = newMute;
+      addLog("Mute: " + val);
     }
   }
   
@@ -1137,10 +1149,10 @@ void updateLEDDisplay() {
     return;
   }
   
-  if (callState == "inactive") {
+  if (callState == CALL_INACTIVE) {
     clearAllLEDs();
-  } else if (callState == "active") {
-    if (muteState == "inactive") {
+  } else {
+    if (muteState == MIC_LIVE) {
       ledBlink(LED_RED_BLINK, 255, 0, 0);   // on call, mic live  → fast red blink
     } else {
       ledSolid(LED_RED_SOLID, 255, 0, 0);   // on call, muted     → steady red
@@ -1177,28 +1189,31 @@ bool isScheduleActive() {
 
 void initializeNTP() {
   addLog("=== TIME SYNC ===");
-  Serial.println("Syncing time with NTP server (0.ua.pool.ntp.org)...");
-  
-  configTime(2 * 3600, 1 * 3600, "0.ua.pool.ntp.org", "1.ua.pool.ntp.org", "2.ua.pool.ntp.org");
-  
-  setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
+
+  setenv("TZ", NTP_TIMEZONE, 1);
   tzset();
-  
-  int attempts = 0;
-  time_t now = time(nullptr);
-  while (now < 24 * 3600 && attempts < 50) {
-    delay(100);
-    Serial.print(".");
-    now = time(nullptr);
-    attempts++;
+
+  for (int attempt = 1; attempt <= NTP_SYNC_ATTEMPTS; attempt++) {
+    Serial.printf("NTP attempt %d/%d...\n", attempt, NTP_SYNC_ATTEMPTS);
+    configTime(NTP_UTC_OFFSET, NTP_DST_OFFSET, NTP_SERVER1, NTP_SERVER2, NTP_SERVER3);
+
+    unsigned long start = millis();
+    time_t now = time(nullptr);
+    while (now < 24 * 3600 && millis() - start < NTP_ATTEMPT_MS) {
+      delay(100);
+      now = time(nullptr);
+    }
+
+    if (now > 24 * 3600) {
+      addLog("✓ Time synced (attempt " + String(attempt) + "/" + String(NTP_SYNC_ATTEMPTS) + ")");
+      return;
+    }
+
+    addLog("✗ NTP attempt " + String(attempt) + "/" + String(NTP_SYNC_ATTEMPTS) + " failed");
+    if (attempt < NTP_SYNC_ATTEMPTS) delay(1000);
   }
-  Serial.println();
-  
-  if (now > 24 * 3600) {
-    addLog("✓ Time synced successfully!");
-  } else {
-    addLog("✗ Failed to sync time with NTP");
-  }
+
+  addLog("✗ Time sync failed after " + String(NTP_SYNC_ATTEMPTS) + " attempts");
 }
 
 void printCurrentTime() {

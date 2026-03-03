@@ -10,6 +10,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.0] — 2026-03-04
+
+### Refactored
+- Moved all NTP configuration out of `initializeNTP()` into named constants
+  at the top of the file: `NTP_SERVER1/2/3`, `NTP_TIMEZONE`,
+  `NTP_UTC_OFFSET`, `NTP_DST_OFFSET`, `NTP_SYNC_ATTEMPTS`, `NTP_ATTEMPT_MS`
+
+### Added
+- NTP sync retry logic — up to 3 attempts (configurable via `NTP_SYNC_ATTEMPTS`),
+  each waiting up to 5 s (`NTP_ATTEMPT_MS`); log shows attempt number on
+  success or failure (e.g. `✓ Time synced (attempt 1/3)`)
+
+---
+
+## [1.7.0] — 2026-03-04
+
+### Refactored
+- Replaced `String callState` / `String muteState` globals with typed enums:
+  `CallState { CALL_INACTIVE, CALL_ACTIVE }` and
+  `MuteState { MIC_LIVE, MIC_MUTED }`
+- All heap-allocating `String` comparisons in the hot poll loop eliminated
+- String↔enum conversion confined to two boundary points only:
+  `parseTeamsResponse()` (API → enum) and `handleSTATUSJson()` (enum → JSON)
+- All three enum types (`CallState`, `MuteState`, `LEDMode`) grouped under
+  a dedicated `STATE ENUMS` section before the global variables
+
+---
+
 ## [1.6.0] — 2026-03-02
 
 ### Refactored
