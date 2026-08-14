@@ -1,0 +1,33 @@
+name: Publish Release
+
+# Public project: the site (zuzzza.github.io) reads GitHub Releases live, but
+# only *published* (non-draft) releases are visible to the anonymous API.
+# release.yml creates a DRAFT; run this to flip it live once you've reviewed it.
+# No hub sync / HUB_PUSH_TOKEN needed — that's only for private projects.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. 2.0.1)"
+        required: true
+      latest:
+        description: "Mark as Latest"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ inputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest=${{ inputs.latest }}

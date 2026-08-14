@@ -1,0 +1,77 @@
+name: Release
+
+# Tags use the project's MAJOR.STEP.FIX scheme WITHOUT a "v" prefix (e.g. 2.0.1),
+# matching the existing tags and src/version.h.
+on:
+  push:
+    tags: ["[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build, e.g. 2.0.1"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"          # keep src/version.h as-is: it is the single source of truth
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Verify tag matches src/version.h
+        run: |
+          src_ver="$(grep -E '^#define FIRMWARE_VERSION ' src/version.h \
+                       | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')"
+          echo "source version = $src_ver ; tag = $TAG"
+          if [ "$src_ver" != "$TAG" ]; then
+            echo "::error::tag ($TAG) != source version ($src_ver). Bump src/version.h to match the tag first."
+            exit 1
+          fi
+
+      - name: Build (d1_mini_lite)
+        run: pio run -e d1_mini_lite
+
+      - name: Stage firmware artifacts
+        run: |
+          mkdir -p dist
+          fw=".pio/build/d1_mini_lite/firmware.bin"
+          # On ESP8266 firmware.bin is both the OTA image (web /update) and the
+          # full image flashed at 0x0 on a blank chip — same bytes, two names so
+          # the site shows both an OTA and a FULL download.
+          cp "$fw" "dist/onair_${TAG}_d1mini.bin"
+          cp "$fw" "dist/onair_${TAG}_d1mini_full.bin"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: dist/*.bin
+          if-no-files-found: error
+
+      - name: Create or refresh draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.bin --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/*.bin \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --draft \
+              --generate-notes
+          fi
