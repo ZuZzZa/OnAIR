@@ -11,6 +11,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.1] — 2026-08-14
+
+### Added
+- CI/CD: firmware is now built and published automatically. Tagging `X.Y.Z`
+  produces a GitHub Release with `onair_<tag>_d1mini.bin` (OTA) and `_full.bin`,
+  surfaced live on <https://zuzzza.github.io/#/p/onair>.
+
+### Notes
+- First release cut through the pipeline; no functional firmware changes since
+  `2.0.0`.
+
 ## [2.0.0] — 2026-03-04
 
 ### Refactored
